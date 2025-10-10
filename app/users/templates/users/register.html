@@ -1,0 +1,23 @@
+{% load crispy_forms_tags %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/styles.css' %}"> <div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card p-4 shadow-sm">
+                <legend class="border-bottom mb-4 text-center">Создать Аккаунт</legend>
+                <form method="POST">
+                    {% csrf_token %}
+                    {{ form.as_p }} 
+                    <div class="form-group mt-4">
+                        <button class="btn btn-primary btn-block" type="submit">Зарегистрироваться</button>
+                    </div>
+                </form>
+                <div class="border-top pt-3 text-center">
+                    <small class="text-muted">
+                        Уже есть аккаунт? <a class="ml-2" href="{% url 'login' %}">Войти</a>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

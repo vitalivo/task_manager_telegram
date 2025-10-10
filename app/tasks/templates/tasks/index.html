@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Управление задачами</title>
+</head>
+<body>
+    <h1>Мои задачи</h1>
+    <div id="user-info" 
+         data-username="{{ request.user.username }}" 
+         data-token="{{ request.user.profile.verification_token }}"
+         data-chat-id="{{ request.user.profile.telegram_chat_id|default:'' }}">
+        
+        <h2>Привязка Telegram</h2>
+        {% if request.user.profile.telegram_chat_id %}
+            <p>✅ Ваш Telegram аккаунт привязан.</p>
+        {% else %}
+            <p>🔗 Для привязки отправьте боту команду <code>/start {{ request.user.profile.verification_token }}</code></p>
+        {% endif %}
+    </div>
+
+    <div id="tasks-list-container">
+        <h2>Невыполненные задачи</h2>
+        <ul id="pending-tasks-list">
+            </ul>
+        
+        <h2>Выполненные задачи</h2>
+        <ul id="completed-tasks-list">
+            </ul>
+    </div>
+
+    <script>
+        const userInfo = document.getElementById('user-info');
+const pendingList = document.getElementById('pending-tasks-list');
+const completedList = document.getElementById('completed-tasks-list');
+const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + 
+              window.location.host + '/ws/tasks/';
+let taskSocket = null;
+
+
+// --- 1. Websocket Connection and Handlers ---
+
+function connectWebSocket() {
+    taskSocket = new WebSocket(wsUrl);
+
+    taskSocket.onopen = function(e) {
+        console.log("[open] Соединение установлено.");
+    };
+
+    taskSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        if (data.type === 'task_update') {
+            handleTaskUpdate(data.data);
+        }
+    };
+
+    taskSocket.onclose = function(e) {
+        console.log("[close] Соединение закрыто. Переподключение через 3 секунды...", e.code);
+        taskSocket = null;
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    taskSocket.onerror = function(e) {
+        console.error("[error]", e);
+        taskSocket.close();
+    };
+}
+
+
+// --- 2. DOM Manipulation ---
+
+function createTaskElement(task) {
+    const li = document.createElement('li');
+    li.id = `task-${task.id}`;
+    li.innerHTML = `
+        <strong>${task.title}</strong> 
+        (Срок: ${task.due_date ? new Date(task.due_date).toLocaleString() : 'Н/У'}, 
+        Исполнитель: ${task.assigned_to.username})
+        ${task.is_completed ? '' : `<button data-task-id="${task.id}" onclick="completeTask(${task.id})">✅ Выполнить</button>`}
+    `;
+    return li;
+}
+
+function handleTaskUpdate(task) {
+    const existingElement = document.getElementById(`task-${task.id}`);
+    
+    if (existingElement) {
+        existingElement.remove(); // Удаляем из старого списка
+    }
+    
+    const newElement = createTaskElement(task);
+    
+    if (task.is_completed) {
+        completedList.prepend(newElement);
+    } else {
+        pendingList.prepend(newElement);
+    }
+    console.log(`Task ${task.id} updated/moved.`);
+}
+
+
+// --- 3. API Interaction (Fetch) ---
+
+async function fetchTasks() {
+    try {
+        // Предполагаем, что Django Session Auth работает
+        const response = await fetch('/api/v1/tasks/'); 
+        const tasks = await response.json();
+        
+        pendingList.innerHTML = '';
+        completedList.innerHTML = '';
+        
+        tasks.forEach(task => handleTaskUpdate(task)); // Используем ту же функцию для заполнения
+        
+    } catch (error) {
+        console.error('Error fetching tasks:', error);
+    }
+}
+
+async function completeTask(taskId) {
+    try {
+        const response = await fetch(`/api/v1/tasks/${taskId}/complete/`, {
+            method: 'POST',
+            // Django requires CSRF token for POST requests
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'), 
+                'Content-Type': 'application/json'
+            },
+        });
+        
+        if (!response.ok) throw new Error('Failed to complete task');
+        
+        // WS сам обновит UI, но если нет (ошибка сети), то можно обновить вручную
+        // const updatedTask = await response.json();
+        // handleTaskUpdate(updatedTask);
+        
+    } catch (error) {
+        console.error(`Error completing task ${taskId}:`, error);
+    }
+}
+
+// Helper to get CSRF token for Django
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            let cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// --- 4. Initialization ---
+
+document.addEventListener('DOMContentLoaded', () => {
+    fetchTasks();
+    connectWebSocket();
+});
+    </script>
+</body>
+</html>

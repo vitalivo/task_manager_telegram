@@ -1,0 +1,34 @@
+# Python
+# Временные файлы и кэш
+*.pyc
+__pycache__/
+*~$
+*.bak
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+
+# Django / Static
+# Собрано командой collectstatic (не должно быть в Git)
+/app/static_files/ 
+/static_files/
+
+# Логи и сессии
+*.log
+/app/sessions/
+
+# Конфиденциальные данные
+# Файл переменных окружения
+.env
+# Файл конфигурации бота
+config.py 
+# Локальная база данных (если не используется Docker Postgres)
+db.sqlite3
+
+# Docker
+# Сгенерированные файлы Docker Compose
+.docker-compose.yml
+# Локальный кэш и временные папки
+.DS_Store

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_DB: taskdb
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py collectstatic --no-input && daphne core.asgi:application -b 0.0.0.0 -p 8000"
+    volumes:
+      - ./app:/usr/src/app/
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    command: celery -A core worker -l info
+    volumes:
+      - ./app:/usr/src/app/
+    env_file:
+      - .env
+    depends_on:
+      - app
+      - redis
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./app:/usr/src/app/
+    env_file:
+      - .env
+    depends_on:
+      - app
+      - redis
+
+  telegram_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    command:  python main.py 
+    volumes:
+      - ./telegram_bot:/usr/src/bot/
+    env_file:
+      - .env
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:

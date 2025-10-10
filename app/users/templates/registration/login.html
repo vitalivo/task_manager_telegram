@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Вход</title>
+</head>
+<body>
+    <h1>Вход в систему</h1>
+    
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Войти</button>
+    </form>
+    
+    {% if form.errors %}
+        <p>Неверный логин или пароль. Попробуйте снова.</p>
+    {% endif %}
+    
+    <p>Нет аккаунта? <a href="{% url 'users:register' %}">Зарегистрироваться</a></p>
+    
+    <input type="hidden" name="next" value="{{ next }}" />
+</body>
+</html>
