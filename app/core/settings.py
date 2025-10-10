@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
+import dj_database_url # Импорт для парсинга DATABASE_URL
+
 # --- НОВОЕ: Загружаем переменные окружения из .env файла ---
 load_dotenv()
 # -------------------------------------------------------------
@@ -52,17 +54,16 @@ INSTALLED_APPS = [
     'channels',
     'django_celery_beat',
     'crispy_forms',
-    'corsheaders', # <-- ДОБАВЛЕНО: для работы с внешним фронтендом
+    'corsheaders', 
     # Local apps
     'users',
     'tasks',
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # ДОЛЖЕН БЫТЬ ПЕРВЫМ
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware', # <-- ДОБАВЛЕНО: должен быть высоко, для обработки CORS запросов
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -94,16 +95,16 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# --- КОРРЕКТНАЯ КОНФИГУРАЦИЯ ДЛЯ RENDER / POSTGRESQL ---
 DATABASES = {
-    'default': {
-        'ENGINE': os.environ.get('SQL_ENGINE'),
-        'NAME': os.environ.get('SQL_DATABASE'),
-        'USER': os.environ.get('SQL_USER'),
-        'PASSWORD': os.environ.get('SQL_PASSWORD'),
-        'HOST': os.environ.get('SQL_HOST'),
-        'PORT': os.environ.get('SQL_PORT'),
-    }
+    'default': dj_database_url.config(
+        # Читает DATABASE_URL из переменной окружения
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600, # Максимальное время жизни соединения
+        conn_health_checks=True,
+    )
 }
+# ---------------------------------------------------------
 
 # Channels (Websockets)
 ASGI_APPLICATION = 'core.asgi.application'
