@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
 import dj_database_url # Импорт для парсинга DATABASE_URL
+from django.conf.global_settings import ALLOWED_HOSTS as GLOBAL_ALLOWED_HOSTS # Добавляем импорт для надежного парсинга
 
 # --- НОВОЕ: Загружаем переменные окружения из .env файла ---
 load_dotenv()
@@ -37,7 +38,26 @@ if not SECRET_KEY and not DEBUG:
 # --------------------------------------------------------
 
 # settings.py
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+# --- ИСПРАВЛЕНО: Теперь читает ALLOWED_HOSTS надежно + добавляет хост Render ---
+ALLOWED_HOSTS = []
+
+# 1. Считываем пользовательские хосты из ALLOWED_HOSTS (если они установлены)
+user_hosts = os.environ.get('ALLOWED_HOSTS', '').split(',')
+for host in user_hosts:
+    host = host.strip()
+    if host:
+        ALLOWED_HOSTS.append(host)
+
+# 2. Добавляем хост, который Render гарантированно предоставляет
+RENDER_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_HOST:
+    # Добавляем Render hostname, чтобы избежать ошибок DisallowedHost
+    ALLOWED_HOSTS.append(RENDER_HOST)
+
+# Удаляем дубликаты и пустые строки, если они есть
+ALLOWED_HOSTS = list(set([h for h in ALLOWED_HOSTS if h]))
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
 CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:8000').split(',')
 
 # Application definition
