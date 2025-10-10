@@ -6,8 +6,6 @@ ENV PYTHONUNBUFFERED 1
 ENV PORT 10000
 
 # --- УСТАНОВКА СИСТЕМНЫХ ЗАВИСИМОСТЕЙ ---
-# libpq-dev необходим для psycopg2-binary
-# build-essential необходим для компиляции некоторых Python-пакетов (например, cryptography)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     libpq-dev \
@@ -15,7 +13,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # --- УСТАНОВКА РАБОЧЕЙ ДИРЕКТОРИИ ---
-# Все последующие команды (COPY, RUN) будут выполняться внутри этой папки
 WORKDIR /usr/src/app
 
 # Копируем файл зависимостей и устанавливаем их
@@ -26,9 +23,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY run_web.sh .
 RUN chmod +x run_web.sh
 
-# Копируем основной код приложения
-# Предполагается, что 'manage.py' находится в корне проекта и его содержимое скопируется
+# Копируем основной код Django приложения
 COPY app/ .
 
-# Команда запуска (она указана в настройках Render, но здесь для справки)
+# !!! ДОБАВЛЕНИЕ КОДА БОТА !!!
+# Копируем код Telegram-бота, чтобы он был доступен внутри контейнера,
+# рядом с Django-кодом, по пути 'telegram_bot/'.
+COPY telegram_bot/ telegram_bot/
+
+# Команда запуска (она указана в настройках Render)
 # CMD ["./run_web.sh"]
