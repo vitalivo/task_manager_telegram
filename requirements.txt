@@ -18,3 +18,5 @@ django-celery-beat==2.8.1
 channels-redis==4.3.0
 django-crispy-forms==2.4
 whitenoise==6.11.0
+
+dj-database-url==3.0.1
