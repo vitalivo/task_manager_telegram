@@ -199,9 +199,9 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [
-    BASE_DIR / 'static', # Если вы хотите использовать app/static/
-]
+# --- ИСПРАВЛЕНО: УДАЛЕНО STATICFILES_DIRS для стандартного поведения ---
+# Django будет искать статику в папках 'static/' внутри каждого приложения.
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 STATIC_ROOT = BASE_DIR / 'static_files' 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -243,6 +243,10 @@ if not DEBUG:
     # 2. Обеспечение безопасных куки
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # --- ДОБАВЛЕНО: Указываем SAMESITE для куки ---
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    # --- КОНЕЦ ДОБАВЛЕНО ---
     
     # 3. HSTS (HTTP Strict Transport Security) - критично для продакшена
     # Заставляет браузеры всегда использовать HTTPS в течение года
@@ -262,6 +266,8 @@ else:
     SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
     SECURE_PROXY_SSL_HEADER = None
 
 # Всегда используйте DENY для защиты от кликджекинга
