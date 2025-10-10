@@ -44,12 +44,14 @@ INSTALLED_APPS = [
     'channels',
     'django_celery_beat',
     'crispy_forms',
-    # Local apps
+    'corsheaders',
+
     'users',
     'tasks',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

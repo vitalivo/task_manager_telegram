@@ -21,3 +21,4 @@ django-crispy-forms==2.4
 whitenoise==6.11.0
 
 dj-database-url==3.0.1
+django-cors-headers==4.9.0
