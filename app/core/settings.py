@@ -14,6 +14,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
+# --- НОВОЕ: Загружаем переменные окружения из .env файла ---
+load_dotenv()
+# -------------------------------------------------------------
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -22,13 +26,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'default-insecure-key')
+SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+# --- НОВОЕ: Проверка SECRET_KEY в режиме продакшена ---
+if not SECRET_KEY and not DEBUG:
+    raise EnvironmentError("SECRET_KEY must be set in a non-DEBUG environment (production).")
+# --------------------------------------------------------
 
 # settings.py
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:8000').split(',')
-
 
 # Application definition
 
@@ -44,8 +52,8 @@ INSTALLED_APPS = [
     'channels',
     'django_celery_beat',
     'crispy_forms',
-    'corsheaders',
-
+    'corsheaders', # <-- ДОБАВЛЕНО: для работы с внешним фронтендом
+    # Local apps
     'users',
     'tasks',
 ]
@@ -54,6 +62,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # <-- ДОБАВЛЕНО: должен быть высоко, для обработки CORS запросов
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -96,30 +105,25 @@ DATABASES = {
     }
 }
 
-# app/core/settings.py
-
-# ... (остальные настройки)
-
 # Channels (Websockets)
 ASGI_APPLICATION = 'core.asgi.application'
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            # ИСПРАВЛЕНИЕ: Используем хардкод, соответствующий docker-compose
+            # Оставляем хардкод 'redis' для работы в Docker-сети
             "hosts": [("redis", 6379)], 
         },
     },
 }
-# ...
+
 # Celery
-# В Celery тоже сделайте хардкод, чтобы убедиться, что все работает
+# Оставляем хардкод 'redis' для работы в Docker-сети
 CELERY_BROKER_URL = 'redis://redis:6379/0'
 CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
-# ...
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
-# Celery Beat
 CELERY_BEAT_SCHEDULE = {
     'check-deadlines-every-5-minutes': {
         'task': 'tasks.tasks.check_deadlines', # Путь к задаче
@@ -187,24 +191,57 @@ LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
+
+# --- НОВЫЙ БЛОК: CORS & Credentials Configuration ---
+# Позволяет загружать список разрешенных доменов из переменной окружения,
+# разделенных запятыми, с запасными значениями для локальной разработки.
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
+    origin.strip() for origin in 
+    os.environ.get(
+        'CORS_ALLOWED_ORIGINS', 
+        'http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000'
+    ).split(',')
 ]
+
+# Обычно необходимо, чтобы фронтенд мог отправлять куки (credentials)
+CORS_ALLOW_CREDENTIALS = True
+# ----------------------------------------------------
 
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap4" # или 'bootstrap5', если вы используете его
 CRISPY_TEMPLATE_PACK = "bootstrap4" 
 
 
-# # Это обязательно для Docker/localhost.
-# CSRF_TRUSTED_ORIGINS = [
-#     'http://localhost:8000',
-#     'http://127.0.0.1:8000',
-# ]
-# app/core/settings.py
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-# Укажите, что прокси-серверы (Render) являются доверенными
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# --- УЛУЧШЕННЫЙ БЛОК: Настройки безопасности для Prod/Dev ---
+if not DEBUG:
+    # Production Security Settings (HTTPS Enforced)
+    
+    # 1. Принудительный редирект на HTTPS
+    SECURE_SSL_REDIRECT = True
+    
+    # 2. Обеспечение безопасных куки
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+    # 3. HSTS (HTTP Strict Transport Security) - критично для продакшена
+    # Заставляет браузеры всегда использовать HTTPS в течение года
+    SECURE_HSTS_SECONDS = 31536000 # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # 4. Указывает, что прокси-серверы (Render, Nginx) являются доверенными
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    
+    # 5. Дополнительные заголовки безопасности
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+else:
+    # Development Settings (Allow HTTP for local use)
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_PROXY_SSL_HEADER = None
+
+# Всегда используйте DENY для защиты от кликджекинга
+X_FRAME_OPTIONS = 'DENY'
