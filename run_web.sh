@@ -1,32 +1,69 @@
 #!/bin/bash
-# Этот скрипт запускает все необходимые компоненты (Web, Worker, Beat, Bot)
-# внутри одного процесса, чтобы соответствовать ограничениям Render Free Tier.
 
-echo "--- 1. Сбор статических файлов ---"
+# --- 1. ОЖИДАНИЕ ГОТОВНОСТИ POSTGRESQL (через nc) ---
+echo "--- 1. Ожидание готовности PostgreSQL ---"
+
+# Извлекаем хост и порт из DATABASE_URL
+DB_HOST=$(echo $DATABASE_URL | sed -e 's/.*@\([^:]*\):.*/\1/')
+DB_PORT=$(echo $DATABASE_URL | sed -e 's/.*:\([0-9]*\)\/.*/\1/')
+
+if [ -z "$DB_PORT" ]; then
+    DB_PORT=5432 # Порт по умолчанию, если не указан
+fi
+
+echo "Ожидаем $DB_HOST:$DB_PORT..."
+
+# Ждем, пока порт не откроется (используем nc, который мы установили в Dockerfile.app)
+WAIT_RETRIES=0
+MAX_WAIT_RETRIES=15  # До 30 секунд ожидания (15 * 2с)
+
+while ! nc -z "$DB_HOST" "$DB_PORT" && [ $WAIT_RETRIES -lt $MAX_WAIT_RETRIES ]; do
+  echo "PostgreSQL недоступен, ждем 2 секунды... (Попытка $((WAIT_RETRIES + 1))/$MAX_WAIT_RETRIES)"
+  sleep 2
+  WAIT_RETRIES=$((WAIT_RETRIES + 1))
+done
+
+if [ $WAIT_RETRIES -ge $MAX_WAIT_RETRIES ]; then
+    echo "--- ОШИБКА: PostgreSQL не стал доступен вовремя. Прерывание. ---"
+    exit 1
+fi
+
+echo "PostgreSQL доступен! Продолжаем..."
+
+# --- 2. МИГРАЦИИ И СТАТИЧЕСКИЕ ФАЙЛЫ ---
+
+# Сбор статических файлов
+echo "--- 2. Сбор статических файлов ---"
 python manage.py collectstatic --no-input
 
-echo "--- 2. Применение миграций базы данных ---"
+# Применение миграций базы данных
+echo "--- 3. Применение миграций базы данных ---"
 python manage.py migrate --no-input
 
-# --- 3. Запуск Celery Worker в фоне ---
-# Worker обрабатывает асинхронные задачи.
-echo "--- 3. Запуск Celery Worker (в фоне) ---"
+# Создание суперпользователя (если он еще не существует)
+echo "--- 4. Создание суперпользователя admin:admin ---"
+# Используем команду, которая создает суперпользователя только если он не существует
+python manage.py createsuperuser --noinput --username admin --email admin@example.com || true
+
+# --- 5. ЗАПУСК ВСЕХ ФОНОВЫХ ПРОЦЕССОВ В ФОНЕ (для Free Tier) ---
+
+echo "--- 5. Запуск фоновых процессов: Celery Worker, Celery Beat и Telegram Bot ---"
+
+# 5.1. Celery Worker (Обработчик задач)
+echo "Запуск Celery Worker..."
 celery -A core worker -l info &
 
-# --- 4. Запуск Celery Beat в фоне ---
-# Beat запускает запланированные задачи (например, проверку просроченных задач).
-echo "--- 4. Запуск Celery Beat (в фоне) ---"
+# 5.2. Celery Beat (Планировщик)
+echo "Запуск Celery Beat..."
 celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler &
 
-# --- 5. Запуск Telegram Bot в фоне ---
-# Запуск основного скрипта бота.
-echo "--- 5. Запуск Telegram Bot (в фоне) ---"
+# 5.3. Telegram Bot
+echo "Запуск Telegram Bot..."
 python telegram_bot/main.py &
 
-# --- 6. Запуск Daphne (основной процесс) ---
-# Daphne должен быть основным процессом, чтобы Web Service оставался активным.
-echo "--- 6. Запуск Daphne server (основной) ---"
-daphne core.asgi:application -b 0.0.0.0 -p $PORT
+# --- 6. ЗАПУСК ГЛАВНОГО ПРОЦЕССА (DAPHNE) ---
 
-# Wait: Ждем завершения основного процесса Daphne.
-wait
+# Запускаем Daphne как основной процесс, чтобы контейнер не завершался.
+echo "--- 6. Запуск Daphne (ASGI-сервера) на порту $PORT ---"
+# exec гарантирует, что Daphne заменит этот bash скрипт, что является лучшей практикой.
+exec daphne core.asgi:application -b 0.0.0.0 -p $PORT

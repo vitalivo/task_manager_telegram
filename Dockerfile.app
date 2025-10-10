@@ -6,13 +6,16 @@ ENV PYTHONUNBUFFERED 1
 ENV PORT 10000
 
 # --- УСТАНОВКА СИСТЕМНЫХ ЗАВИСИМОСТЕЙ ---
+# netcat нужен для скрипта ожидания базы данных (wait-for-db)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     libpq-dev \
     build-essential \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
 
 # --- УСТАНОВКА РАБОЧЕЙ ДИРЕКТОРИИ ---
+# Все последующие команды (COPY, RUN) будут выполняться внутри этой папки
 WORKDIR /usr/src/app
 
 # Копируем файл зависимостей и устанавливаем их
