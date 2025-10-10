@@ -2,21 +2,18 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED 1
 
-# --- [КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Установка системных зависимостей] ---
-# libpq-dev: Необходим для psycopg2-binary
-# build-essential: Набор инструментов для компиляции (нужен для многих библиотек, таких как cryptography)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# [Здесь остаются ваши RUN apt-get install и pip install]
+# ...
 
-WORKDIR /usr/src/app
-
-# Копируем файл зависимостей
+# Копируем rest of the code.
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Копируем остальной код. Поскольку вы используете COPY app/ ., 
-# я предполагаю, что manage.py находится в /usr/src/app/manage.py
-COPY app/ . 
+# Копируем скрипт запуска и даем ему права на исполнение
+COPY run_web.sh .
+RUN chmod +x run_web.sh
+
+# Копируем остальной код.
+COPY app/ .
+
+WORKDIR /usr/src/app
