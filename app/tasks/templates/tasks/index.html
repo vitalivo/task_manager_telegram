@@ -1,166 +1,393 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>Управление задачами</title>
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .task-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            user-select: none;
+        }
+        .task-card:hover:not(.completed) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .completed {
+            opacity: 0.6;
+            text-decoration: line-through;
+            border-left: 5px solid #198754 !important;
+        }
+        .pending {
+            border-left: 5px solid #0d6efd !important;
+        }
+    </style>
 </head>
-<body>
-    <h1>Мои задачи</h1>
-    <div id="user-info" 
-         data-username="{{ request.user.username }}" 
-         data-token="{{ request.user.profile.verification_token }}"
-         data-chat-id="{{ request.user.profile.telegram_chat_id|default:'' }}">
+<body class="bg-light">
+    <!-- ИСПРАВЛЕНИЕ 403: Скрытая форма для обеспечения наличия CSRF-токена в cookies для AJAX-запросов. -->
+    <form id="csrf-form" style="display:none;" method="POST">
+        {% csrf_token %}
+    </form>
+
+    <div class="container mt-5">
+        <header class="mb-4 d-flex justify-content-between align-items-center">
+            <h1 class="text-primary">Мои задачи</h1>
+            <div class="d-flex align-items-center">
+                <!-- Кнопка "Перейти в Админку" (только для админа) -->
+                {% if request.user.is_staff %}
+                    <a href="/admin/" class="btn btn-warning btn-sm me-2">Перейти в Админку</a>
+                {% endif %}
+                
+                <form action="{% url 'logout' %}?next={% url 'login' %}" method="post" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Выйти</button>
+                </form>
+            </div>
+        </header>
+
+        <!-- User Info and Telegram Linking -->
+        {% with user_default_list_id=request.user.task_lists.first.id|default_if_none:"" %}
+        <div id="user-info" class="card shadow-sm p-3 mb-4 bg-white"
+             data-username="{{ request.user.username }}" 
+             data-token="{{ request.user.profile.verification_token }}"
+             data-chat-id="{{ request.user.profile.telegram_chat_id|default:'' }}"
+             data-default-list-id="{{ user_default_list_id }}"
+             data-is-admin="{{ request.user.is_staff|yesno:'true,false' }}"> 
+            
+            <h5 class="card-title text-secondary">Пользователь: {{ request.user.username }}</h5>
+            <div class="d-flex align-items-center">
+                {% if request.user.profile.telegram_chat_id %}
+                    <span class="badge text-bg-success me-2">Telegram Аккаунт Привязан</span>
+                {% else %}
+                    <span class="badge text-bg-warning me-2">Telegram Не Привязан</span>
+                    <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse" data-bs-target="#telegramInstructions" aria-expanded="false" aria-controls="telegramInstructions">
+                        Как привязать?
+                    </button>
+                {% endif %}
+            </div>
+            
+            <div class="collapse mt-3" id="telegramInstructions">
+                <p class="mb-0">🔗 Отправьте боту команду:</p>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="telegramCommand" readonly 
+                           value="/start {{ request.user.profile.verification_token }}">
+                    <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('telegramCommand')">Копировать</button>
+                </div>
+            </div>
+        </div>
+        {% endwith %}
         
-        <h2>Привязка Telegram</h2>
-        {% if request.user.profile.telegram_chat_id %}
-            <p>✅ Ваш Telegram аккаунт привязан.</p>
-        {% else %}
-            <p>🔗 Для привязки отправьте боту команду <code>/start {{ request.user.profile.verification_token }}</code></p>
-        {% endif %}
+        <!-- Task Creation Form - УДАЛЕНА ИЗ РАЗМЕТКИ -->
+
+        <!-- Tasks List Container -->
+        <div id="tasks-list-container" class="row">
+            
+            <div class="col-md-6 mb-4">
+                <div class="h4 text-primary border-bottom pb-2">Невыполненные задачи (<span id="pending-count">0</span>)</div>
+                <div id="pending-tasks-list" class="list-group">
+                    <!-- Pending tasks will be inserted here by JS -->
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-4">
+                <div class="h4 text-success border-bottom pb-2">Выполненные задачи (<span id="completed-count">0</span>)</div>
+                <div id="completed-tasks-list" class="list-group">
+                    <!-- Completed tasks will be inserted here by JS -->
+                </div>
+            </div>
+        </div>
+
     </div>
 
-    <div id="tasks-list-container">
-        <h2>Невыполненные задачи</h2>
-        <ul id="pending-tasks-list">
-            </ul>
-        
-        <h2>Выполненные задачи</h2>
-        <ul id="completed-tasks-list">
-            </ul>
-    </div>
-
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const userInfo = document.getElementById('user-info');
-const pendingList = document.getElementById('pending-tasks-list');
-const completedList = document.getElementById('completed-tasks-list');
-const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + 
-              window.location.host + '/ws/tasks/';
-let taskSocket = null;
-
-
-// --- 1. Websocket Connection and Handlers ---
-
-function connectWebSocket() {
-    taskSocket = new WebSocket(wsUrl);
-
-    taskSocket.onopen = function(e) {
-        console.log("[open] Соединение установлено.");
-    };
-
-    taskSocket.onmessage = function(e) {
-        const data = JSON.parse(e.data);
-        if (data.type === 'task_update') {
-            handleTaskUpdate(data.data);
+        const pendingList = document.getElementById('pending-tasks-list');
+        const completedList = document.getElementById('completed-tasks-list');
+        const pendingCount = document.getElementById('pending-count');
+        const completedCount = document.getElementById('completed-count');
+        // const taskCreationForm = document.getElementById('task-creation-form'); // УДАЛЕНО: форма создания больше не в DOM
+        
+        const DEFAULT_LIST_ID = userInfo.getAttribute('data-default-list-id');
+        const IS_ADMIN = userInfo.getAttribute('data-is-admin') === 'true';
+        
+        if (!DEFAULT_LIST_ID) {
+            // Оставим только предупреждение, так как создание задач перенесено в админку
+            console.warn("WARNING: Default task list ID is missing. This is fine if tasks are created via Admin.");
         }
-    };
 
-    taskSocket.onclose = function(e) {
-        console.log("[close] Соединение закрыто. Переподключение через 3 секунды...", e.code);
-        taskSocket = null;
-        setTimeout(connectWebSocket, 3000);
-    };
+        // УДАЛЕНО: Скрытие формы создания задачи больше не требуется
 
-    taskSocket.onerror = function(e) {
-        console.error("[error]", e);
-        taskSocket.close();
-    };
-}
-
-
-// --- 2. DOM Manipulation ---
-
-function createTaskElement(task) {
-    const li = document.createElement('li');
-    li.id = `task-${task.id}`;
-    li.innerHTML = `
-        <strong>${task.title}</strong> 
-        (Срок: ${task.due_date ? new Date(task.due_date).toLocaleString() : 'Н/У'}, 
-        Исполнитель: ${task.assigned_to.username})
-        ${task.is_completed ? '' : `<button data-task-id="${task.id}" onclick="completeTask(${task.id})">✅ Выполнить</button>`}
-    `;
-    return li;
-}
-
-function handleTaskUpdate(task) {
-    const existingElement = document.getElementById(`task-${task.id}`);
-    
-    if (existingElement) {
-        existingElement.remove(); // Удаляем из старого списка
-    }
-    
-    const newElement = createTaskElement(task);
-    
-    if (task.is_completed) {
-        completedList.prepend(newElement);
-    } else {
-        pendingList.prepend(newElement);
-    }
-    console.log(`Task ${task.id} updated/moved.`);
-}
-
-
-// --- 3. API Interaction (Fetch) ---
-
-async function fetchTasks() {
-    try {
-        // Предполагаем, что Django Session Auth работает
-        const response = await fetch('/api/v1/tasks/'); 
-        const tasks = await response.json();
+        // WebSocket Setup
+        const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/tasks/';
+        let socket;
         
-        pendingList.innerHTML = '';
-        completedList.innerHTML = '';
-        
-        tasks.forEach(task => handleTaskUpdate(task)); // Используем ту же функцию для заполнения
-        
-    } catch (error) {
-        console.error('Error fetching tasks:', error);
-    }
-}
+        function connectWebSocket() {
+            socket = new WebSocket(wsUrl);
 
-async function completeTask(taskId) {
-    try {
-        const response = await fetch(`/api/v1/tasks/${taskId}/complete/`, {
-            method: 'POST',
-            // Django requires CSRF token for POST requests
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'), 
-                'Content-Type': 'application/json'
-            },
-        });
-        
-        if (!response.ok) throw new Error('Failed to complete task');
-        
-        // WS сам обновит UI, но если нет (ошибка сети), то можно обновить вручную
-        // const updatedTask = await response.json();
-        // handleTaskUpdate(updatedTask);
-        
-    } catch (error) {
-        console.error(`Error completing task ${taskId}:`, error);
-    }
-}
+            socket.onopen = () => {
+                console.log('WebSocket connected.');
+                // Загружаем начальные данные после подключения
+                loadTasks(); 
+            };
 
-// Helper to get CSRF token for Django
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            let cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
+            socket.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                console.log('Received message (WS):', data);
+
+                if (data.type === 'task_update') {
+                    handleTaskUpdate(data.task);
+                } else if (data.type === 'task_delete') {
+                    handleTaskDelete(data.id);
+                }
+            };
+
+            socket.onclose = (e) => {
+                console.log('WebSocket closed. Attempting to reconnect in 3s...', e.reason);
+                setTimeout(connectWebSocket, 3000); // Reconnect
+            };
+
+            socket.onerror = (err) => {
+                console.error('WebSocket error:', err);
+                socket.close(); // Force close to trigger reconnect
+            };
+        }
+
+        // --- Task Rendering Functions ---
+        
+        function createTaskElement(task) {
+            const li = document.createElement('div');
+            li.id = `task-${task.id}`;
+            // Добавлено: отображение имени пользователя, которому назначена задача
+            const assignedUsername = task.assigned_to ? task.assigned_to.username : 'Не назначен';
+            
+            li.className = `task-card list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-2 rounded-3 shadow-sm ${task.is_completed ? 'completed' : 'pending'}`;
+            li.setAttribute('data-id', task.id);
+
+            const content = document.createElement('div');
+            content.className = 'flex-grow-1';
+            content.innerHTML = `
+                <p class="mb-1 fw-bold">${task.title}</p>
+                <small class="text-muted">
+                    Создано: ${new Date(task.created_at).toLocaleString()} | Исполнитель: <strong>${assignedUsername}</strong>
+                </small>
+            `;
+            li.appendChild(content);
+
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'btn-group btn-group-sm ms-3';
+
+            // Complete/Undo Button: ДОСТУПЕН ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = `btn ${task.is_completed ? 'btn-outline-warning' : 'btn-outline-success'}`;
+            toggleBtn.textContent = task.is_completed ? 'Отменить' : 'Готово'; 
+            
+            toggleBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleTaskCompletion(task.id, task.is_completed);
+            };
+            
+            buttonGroup.appendChild(toggleBtn);
+            
+            // Delete Button: ДОСТУПЕН ТОЛЬКО ДЛЯ АДМИНОВ
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-outline-danger';
+            deleteBtn.textContent = 'Удалить';
+            
+            // Логика кнопки Удалить: доступна только для админов
+            if (!IS_ADMIN) {
+                deleteBtn.disabled = true;
+                deleteBtn.classList.remove('btn-outline-danger');
+                deleteBtn.classList.add('btn-secondary');
+            } else {
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const isConfirmed = prompt('Вы уверены, что хотите удалить задачу? Введите "да" для подтверждения.') === 'да'; 
+                    if(isConfirmed) {
+                        deleteTask(task.id);
+                    }
+                };
+            }
+            buttonGroup.appendChild(deleteBtn);
+
+            li.appendChild(buttonGroup);
+            return li;
+        }
+
+        function handleTaskUpdate(task) {
+            const existingElement = document.getElementById(`task-${task.id}`);
+            const newElement = createTaskElement(task);
+            
+            if (existingElement) {
+                existingElement.remove();
+            }
+
+            if (task.is_completed) { 
+                completedList.prepend(newElement);
+            } else {
+                pendingList.prepend(newElement);
+            }
+            updateCounts();
+        }
+
+        function handleTaskDelete(taskId) {
+            const element = document.getElementById(`task-${taskId}`);
+            if (element) {
+                element.remove();
+            }
+            updateCounts();
+        }
+
+        function clearLists() {
+            pendingList.innerHTML = '';
+            completedList.innerHTML = '';
+            updateCounts(0, 0);
+        }
+
+        function updateCounts() {
+            pendingCount.textContent = pendingList.children.length;
+            completedCount.textContent = completedList.children.length;
+        }
+
+
+        // --- API & Utility Functions ---
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    let cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        async function loadTasks() {
+            clearLists();
+            try {
+                // Изменение: теперь загружаем ВСЕ задачи (поскольку админ видит все)
+                const response = await fetch('/api/v1/tasks/');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("Error fetching tasks:", response.status, errorText);
+                    throw new Error(`Failed to fetch tasks with status: ${response.status}`);
+                }
+                const tasks = await response.json();
+
+                tasks.forEach(task => {
+                    handleTaskUpdate(task);
+                });
+            } catch (error) {
+                console.error("Error loading tasks:", error);
+                alert(`Не удалось загрузить задачи. Проверьте консоль. Ошибка: ${error.message}`); 
             }
         }
-    }
-    return cookieValue;
-}
 
-// --- 4. Initialization ---
+        async function handleApiResponse(response, successMessage) {
+            if (!response.ok) {
+                let errorData = "Неизвестная ошибка";
+                try {
+                    errorData = await response.json();
+                } catch (e) {
+                    errorData = await response.text();
+                }
+                
+                console.error(`API Error (${response.status}):`, errorData);
+                
+                let errorMessage = `Ошибка операции (${response.status}): `;
+                if (typeof errorData === 'object' && errorData !== null) {
+                    errorMessage += JSON.stringify(errorData, null, 2);
+                } else {
+                    errorMessage += errorData.substring(0, 100) + '...';
+                }
+                
+                alert(errorMessage); 
+                throw new Error(errorMessage);
+            }
+            console.log(successMessage);
+            // FALLBACK: Принудительное обновление, если WS не настроен
+            loadTasks(); 
+        }
 
-document.addEventListener('DOMContentLoaded', () => {
-    fetchTasks();
-    connectWebSocket();
-});
+        // УДАЛЕНО: функция createTask()
+
+        async function toggleTaskCompletion(taskId, isCompleted) {
+            // Доступно всем пользователям
+            
+            const endpoint = isCompleted ? 'uncomplete' : 'complete'; 
+            
+            try {
+                const response = await fetch(`/api/v1/tasks/${taskId}/${endpoint}/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'), 
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                await handleApiResponse(response, `Task ${taskId} toggled to ${endpoint} successfully.`);
+                
+            } catch (error) {
+                console.error(`Error toggling task ${taskId}:`, error);
+            }
+        }
+
+        async function deleteTask(taskId) {
+            // Проверка: только админ (осталась для безопасности, хотя кнопка отключена)
+            if (!IS_ADMIN) {
+                alert('У вас нет прав для удаления задач.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v1/tasks/${taskId}/`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'), 
+                        'Content-Type': 'application/json'
+                    },
+                });
+                
+                // DELETE обычно возвращает 204 No Content
+                if (response.status === 204) {
+                    console.log(`Task ${taskId} deleted successfully.`);
+                    // FALLBACK: Принудительное обновление
+                    loadTasks(); 
+                    return;
+                }
+
+                await handleApiResponse(response, `Task ${taskId} deleted successfully.`);
+                
+            } catch (error) {
+                console.error(`Error deleting task ${taskId}:`, error);
+            }
+        }
+
+        function copyToClipboard(elementId) {
+            const copyText = document.getElementById(elementId);
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); 
+            document.execCommand("copy");
+
+            const btn = copyText.nextElementSibling;
+            const originalText = btn.textContent;
+            btn.textContent = 'Скопировано!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 1500);
+        }
+
+        document.addEventListener('DOMContentLoaded', connectWebSocket);
     </script>
 </body>
 </html>
