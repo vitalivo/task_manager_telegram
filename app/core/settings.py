@@ -24,7 +24,7 @@ DEPLOYMENT_HOST = 'task-manager-telegram.onrender.com'
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
 # Build ALLOWED_HOSTS list
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', DEPLOYMENT_HOST]
+ALLOWED_HOSTS = ['localhost', 'app', '127.0.0.1',  '0.0.0.0', DEPLOYMENT_HOST]
 
 if RENDER_EXTERNAL_HOSTNAME:
     # Add the RENDER provided hostname
@@ -38,8 +38,8 @@ if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 # Add local trusted origins
 CSRF_TRUSTED_ORIGINS.extend([
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
+    'http://localhost:8005',
+    'http://127.0.0.1:8005',
 ])
 
 
@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'channels',
     'django_celery_beat',
     'crispy_forms',
+    'corsheaders',
     # Local apps
     'users',
     'tasks',
@@ -63,6 +64,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -120,15 +122,14 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            # Используем CHANNELS_HOSTS, зависящий от режима DEBUG
-            "hosts": CHANNELS_HOSTS, 
+            "hosts": [REDIS_URL],  # всегда используем REDIS_URL
         },
     },
 }
 
 # Celery
-CELERY_BROKER_URL = BROKER_URL
-CELERY_RESULT_BACKEND = BROKER_URL
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 # Celery Beat
@@ -185,13 +186,13 @@ USE_TZ = True
 TIME_ZONE = 'Europe/Moscow'
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     # Remove this line if you put static files inside app/static/
     # BASE_DIR / 'static', 
 ]
-STATIC_ROOT = BASE_DIR / 'static_files' 
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 

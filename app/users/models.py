@@ -14,15 +14,28 @@ class UserProfile(models.Model):
     telegram_chat_id = models.CharField(max_length=50, blank=True, null=True, unique=True, verbose_name='Telegram Chat ID')
     verification_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     
+    personal_bot_token = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        verbose_name='Токен личного бота'
+    )
+    personal_bot_username = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        verbose_name='Username личного бота'
+    )
+    
     # --- ДОБАВЛЕНИЕ РУССКИХ НАЗВАНИЙ ДЛЯ АДМИНКИ ---
     class Meta:
-        verbose_name = "Профиль пользователя"
-        verbose_name_plural = "Профили пользователей"
+        verbose_name = "user profile"
+        verbose_name_plural = "users profile"
     # --------------------------------------------------
 
     def __str__(self):
         # Обновляем, чтобы в списке было 'Профиль admin123' вместо 'Profile of admin123'
-        return f"Профиль {self.user.username}"
+        return f"Profile: {self.user.username}"
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):

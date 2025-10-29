@@ -1,13 +1,12 @@
-# app/users/forms.py
+# users/forms.py
+from django.contrib.auth.forms import UserCreationForm
+from .models import User
 
-from django.contrib.auth.forms import UserCreationForm, UserChangeForm
-from .models import User  # Импортируйте вашу кастомную модель User
-
-# Форма для регистрации (замена стандартной UserCreationForm)
 class CustomUserCreationForm(UserCreationForm):
-    class Meta(UserCreationForm.Meta):
-        # Явно указываем, что это форма для вашей модели users.User
+    class Meta:
         model = User
-        # Включаем все нужные поля (обычно username и email, если есть)
-        fields = ('username',) # Оставьте только те поля, которые нужны для создания
-        # fields = UserCreationForm.Meta.fields + ('email',) # Пример добавления email
+        fields = ['username', 'email', 'password1', 'password2']  # Добавляем email
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['email'].required = True  # Делаем email обязательным

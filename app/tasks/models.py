@@ -6,11 +6,10 @@ class TeamList(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_lists')
 
     class Meta:
-        verbose_name = "Список команды"
-        verbose_name_plural = "Списки команд"
-        
+        verbose_name = "Team List" 
+        verbose_name_plural = "Team Lists"
     def __str__(self):
-        return self.name
+        return f"{self.name} (by {self.created_by.username})"
 
 class Task(models.Model):
     title = models.CharField(max_length=255)
@@ -26,8 +25,8 @@ class Task(models.Model):
 
     class Meta:
         ordering = ['due_date', '-created_at']
-        verbose_name = "Задача"
-        verbose_name_plural = "Задачи"
+        verbose_name = "Task"
+        verbose_name_plural = "Tasks"
 
     def __str__(self):
-        return self.title
+        return f"{self.title} (ID: {self.id})" 
