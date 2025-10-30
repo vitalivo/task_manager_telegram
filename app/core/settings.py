@@ -57,7 +57,7 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'crispy_forms',
     'corsheaders',
-    # Local apps
+    'widget_tweaks',
     'users',
     'tasks',
 ]

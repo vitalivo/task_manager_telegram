@@ -5,9 +5,72 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>Управление задачами</title>
-    <!-- Bootstrap 5 CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        /* 🌙 CSS Variables for Theming */
+        :root {
+            --body-bg: #f8f9fa; /* light: bg-light */
+            --card-bg: #ffffff; /* light: bg-white */
+            --text-color: #212529; /* light: text-dark */
+            --primary-color: #0d6efd; /* Blue */
+            --success-color: #198754; /* Green */
+            --secondary-text-color: #6c757d; /* light: text-secondary */
+            --border-color: rgba(0, 0, 0, 0.125);
+        }
+
+        body.dark-mode {
+            --body-bg: #212529; /* dark body bg */
+            --card-bg: #2b3035; /* dark card bg */
+            --text-color: #f8f9fa; /* light text */
+            --primary-color: #0d6efd; 
+            --success-color: #198754; /* Green remains, but may need adjustment for better contrast */
+            --secondary-text-color: #adb5bd; /* Lighter secondary text */
+            --border-color: rgba(255, 255, 255, 0.125);
+        }
+
+        /* 1. Base Styles: Apply variables to the entire body */
+        body {
+            background-color: var(--body-bg);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        /* 2. Heading Styles: Ensure main headings use theme colors */
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--text-color); /* Default to theme text color */
+        }
+        
+        /* Apply primary color explicitly to the main task heading */
+        .h4.text-primary, h1.text-primary { color: var(--primary-color) !important; }
+        .h4.text-success { color: var(--success-color) !important; }
+
+        /* 3. Link/Anchor Styles: Ensure links are visible and colored correctly */
+        a { color: var(--primary-color); }
+        .dark-mode a { color: var(--primary-color); }
+        
+        .text-secondary { color: var(--secondary-text-color) !important; }
+        .text-muted {
+            color: var(--secondary-text-color) !important; /* Muted text follows the theme */
+            opacity: 0.8;
+        }
+
+        /* 4. Card and List Item Styles (as before, but cleaned up) */
+        .card, .list-group-item {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border-color: var(--border-color);
+            border: 1px solid var(--border-color);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        /* Collapse/Alert Background in Dark Mode for contrast */
+        .dark-mode .alert-info {
+            background-color: #343a40; /* Darker background for the info box */
+            color: #ced4da;
+            border-color: #495057;
+        }
+
+        /* Task Card Hover/Status Styles */
         .task-card {
             transition: all 0.3s ease;
             cursor: pointer;
@@ -15,29 +78,45 @@
         }
         .task-card:hover:not(.completed) {
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15); 
         }
+
+        .dark-mode .task-card:hover:not(.completed) {
+            box-shadow: 0 4px 10px rgba(255, 255, 255, 0.08);
+        }
+
         .completed {
-            opacity: 0.6;
+            opacity: 0.7; 
             text-decoration: line-through;
-            border-left: 5px solid #198754 !important;
+            border-left: 5px solid var(--success-color) !important; /* Green */
         }
         .pending {
-            border-left: 5px solid #0d6efd !important;
+            border-left: 5px solid var(--primary-color) !important; /* Blue */
+        }
+
+        .list-group-item-action:hover {
+            background-color: rgba(0, 0, 0, 0.05); /* Slight hover effect */
+        }
+        .dark-mode .list-group-item-action:hover {
+            background-color: rgba(255, 255, 255, 0.05); 
         }
     </style>
 </head>
-<body class="bg-light">
-    <!-- ИСПРАВЛЕНИЕ 403: Скрытая форма для обеспечения наличия CSRF-токена в cookies для AJAX-запросов. -->
+<body>
     <form id="csrf-form" style="display:none;" method="POST">
         {% csrf_token %}
     </form>
 
     <div class="container mt-5">
         <header class="mb-4 d-flex justify-content-between align-items-center">
-            <h1 class="text-primary">Мои задачи</h1>
+            <h1 class="text-primary">Мои задачи</h1> 
             <div class="d-flex align-items-center">
-                <!-- Кнопка "Перейти в Админку" (только для админа) -->
+                <button id="theme-toggle" class="btn btn-outline-secondary btn-sm me-2" title="Сменить тему">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-moon-fill" viewBox="0 0 16 16">
+                        <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.27 7.29 7.29 7.29 1.436 0 2.8-.49 3.844-1.3A.77.77 0 0 1 15.823 15h-.498a7.21 7.21 0 0 1-9.4-4.852C5.006 8.529 6 6.55 6 5.5s-.19-2.031-.19-2.031z"/>
+                    </svg>
+                </button>
+                
                 {% if request.user.is_staff %}
                     <a href="/admin/" class="btn btn-warning btn-sm me-2">Перейти в Админку</a>
                 {% endif %}
@@ -49,9 +128,8 @@
             </div>
         </header>
 
-        <!-- User Info and Telegram Linking -->
         {% with user_default_list_id=request.user.task_lists.first.id|default_if_none:"" %}
-        <div id="user-info" class="card shadow-sm p-3 mb-4 bg-white"
+        <div id="user-info" class="card shadow-lg p-3 mb-4 rounded-4"
              data-username="{{ request.user.username }}" 
              data-token="{{ request.user.profile.verification_token }}"
              data-chat-id="{{ request.user.profile.telegram_chat_id|default:'' }}"
@@ -82,7 +160,7 @@
                 <p class="mb-0">🔗 Отправьте боту команду:</p>
                 <div class="input-group">
                     <input type="text" class="form-control" id="telegramCommand" readonly 
-                           value="/start {{ request.user.profile.verification_token }}">
+                                 value="/start {{ request.user.profile.verification_token }}">
                     <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('telegramCommand')">Копировать</button>
                 </div>
                 <div class="mt-2">
@@ -95,8 +173,7 @@
         </div>
         {% endwith %}
 
-        <!-- Personal Bot Settings -->
-        <div class="card shadow-sm p-3 mb-4 bg-white">
+        <div class="card shadow-lg p-3 mb-4 rounded-4">
             <h5 class="card-title text-secondary">Настройки личного бота</h5>
             
             <div id="personal-bot-status">
@@ -127,33 +204,30 @@
                     <div class="mb-3">
                         <label for="bot-token" class="form-label">Токен бота:</label>
                         <input type="password" class="form-control" id="bot-token" 
-                               placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz" required>
+                                 placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz" required>
                     </div>
                     <div class="mb-3">
                         <label for="bot-username" class="form-label">Username бота (опционально):</label>
                         <input type="text" class="form-control" id="bot-username" 
-                               placeholder="@my_personal_bot">
+                                 placeholder="@my_personal_bot">
                     </div>
                     <button type="submit" class="btn btn-success">Сохранить настройки бота</button>
                 </form>
             </div>
         </div>
         
-        <!-- Tasks List Container -->
         <div id="tasks-list-container" class="row">
             
             <div class="col-md-6 mb-4">
                 <div class="h4 text-primary border-bottom pb-2">Невыполненные задачи (<span id="pending-count">0</span>)</div>
                 <div id="pending-tasks-list" class="list-group">
-                    <!-- Pending tasks will be inserted here by JS -->
-                </div>
+                    </div>
             </div>
             
             <div class="col-md-6 mb-4">
                 <div class="h4 text-success border-bottom pb-2">Выполненные задачи (<span id="completed-count">0</span>)</div>
                 <div id="completed-tasks-list" class="list-group">
-                    <!-- Completed tasks will be inserted here by JS -->
-                </div>
+                    </div>
             </div>
         </div>
 
@@ -161,6 +235,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ... (Ваш JavaScript код с логикой темы, WebSocket и API) ...
+        
         const userInfo = document.getElementById('user-info');
         const pendingList = document.getElementById('pending-tasks-list');
         const completedList = document.getElementById('completed-tasks-list');
@@ -174,7 +250,73 @@
             console.warn("WARNING: Default task list ID is missing. This is fine if tasks are created via Admin.");
         }
 
-        // WebSocket Setup
+        // --- Theme Toggle Logic (unchanged) ---
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const body = document.body;
+
+        function updateThemeToggleIcon() {
+            if (body.classList.contains('dark-mode')) {
+                themeToggleBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-sun-fill" viewBox="0 0 16 16">
+                        <path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.414a.5.5 0 1 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.343 3.343a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 0 1-.707.707L4.343 4.05a.5.5 0 0 1 0-.707z"/>
+                    </svg>
+                `;
+            } else {
+                themeToggleBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-moon-fill" viewBox="0 0 16 16">
+                        <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.27 7.29 7.29 7.29 1.436 0 2.8-.49 3.844-1.3A.77.77 0 0 1 15.823 15h-.498a7.21 7.21 0 0 1-9.4-4.852C5.006 8.529 6 6.55 6 5.5s-.19-2.031-.19-2.031z"/>
+                    </svg>
+                `;
+            }
+        }
+        
+        function setSystemTheme() {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (prefersDark) {
+                body.classList.add('dark-mode');
+            } else {
+                body.classList.remove('dark-mode');
+            }
+        }
+
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                body.classList.add('dark-mode');
+            } else if (savedTheme === 'light') {
+                body.classList.remove('dark-mode');
+            } else {
+                // Если тема не сохранена, используем системные настройки
+                setSystemTheme();
+            }
+            updateThemeToggleIcon();
+        }
+
+        function toggleTheme() {
+            body.classList.toggle('dark-mode');
+            const newTheme = body.classList.contains('dark-mode') ? 'dark' : 'light';
+            localStorage.setItem('theme', newTheme);
+            updateThemeToggleIcon();
+        }
+        
+        // --- API & Utility Functions (unchanged) ---
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    let cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // WebSocket Setup (unchanged)
         const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/tasks/';
         let socket;
         
@@ -208,7 +350,7 @@
             };
         }
 
-        // --- Task Rendering Functions ---
+        // --- Task Rendering Functions (unchanged) ---
         
         function createTaskElement(task) {
             const li = document.createElement('div');
@@ -300,23 +442,8 @@
             completedCount.textContent = completedList.children.length;
         }
 
-        // --- API & Utility Functions ---
-
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    let cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
-
+        // ... (Остальные API и Utility функции - loadTasks, handleApiResponse, toggleTaskCompletion, deleteTask, copyToClipboard, checkTelegramStatus, loadPersonalBotSettings, savePersonalBot, clearPersonalBot - не меняются) ...
+        
         async function loadTasks() {
             clearLists();
             try {
@@ -424,7 +551,6 @@
             }, 1500);
         }
 
-        // --- Telegram Status Checking ---
         async function checkTelegramStatus() {
             try {
                 const response = await fetch('/api/v1/tasks/personal-bot/', {
@@ -448,7 +574,6 @@
             }
         }
 
-        // --- Personal Bot Management ---
         async function loadPersonalBotSettings() {
             try {
                 const response = await fetch('/api/v1/tasks/personal-bot/', {
@@ -518,6 +643,10 @@
         document.addEventListener('DOMContentLoaded', function() {
             connectWebSocket();
             
+            // Theme setup
+            themeToggleBtn.addEventListener('click', toggleTheme);
+            loadTheme();
+            
             const personalBotForm = document.getElementById('personal-bot-form');
             if (personalBotForm) {
                 personalBotForm.addEventListener('submit', function(e) {
@@ -532,8 +661,21 @@
 
             // Автоматическая проверка статуса Telegram каждые 10 секунд если инструкции открыты
             const telegramInstructions = document.getElementById('telegramInstructions');
-            if (telegramInstructions && telegramInstructions.classList.contains('show')) {
-                setInterval(checkTelegramStatus, 10000);
+            // Используем MutationObserver для отслеживания открытия collapse
+            if (telegramInstructions) {
+                const observer = new MutationObserver((mutationsList, observer) => {
+                    if (telegramInstructions.classList.contains('show')) {
+                        // Начало автоматической проверки
+                        const checkInterval = setInterval(() => {
+                             if (!telegramInstructions.classList.contains('show')) {
+                                 clearInterval(checkInterval); // Остановить, если закрыли
+                            } else {
+                                checkTelegramStatus();
+                            }
+                        }, 10000);
+                    }
+                });
+                observer.observe(telegramInstructions, { attributes: true, attributeFilter: ['class'] });
             }
         });
     </script>
