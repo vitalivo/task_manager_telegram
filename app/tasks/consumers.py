@@ -1,28 +1,23 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
-from asgiref.sync import sync_to_async
-from django.contrib.auth import get_user_model
 
-User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class TaskConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        # Аутентификация пользователя (предполагаем, что сессия уже установлена через DRF/Django)
-        # Для простоты: используем self.scope["user"] из аутентификации Django Channels
         if self.scope["user"].is_authenticated:
             self.user = self.scope["user"]
             self.user_group_name = f'user_{self.user.id}'
-
-            # Добавляем канал в группу пользователя
             await self.channel_layer.group_add(
                 self.user_group_name,
                 self.channel_name
             )
             await self.accept()
-            print(f"WS connected for user: {self.user.username}")
+            logger.info("WS connected for user: %s", self.user.username)
         else:
             await self.close()
-            print("WS connection rejected (unauthenticated)")
+            logger.warning("WS connection rejected (unauthenticated)")
 
     async def disconnect(self, close_code):
         if hasattr(self, 'user_group_name'):
@@ -30,14 +25,10 @@ class TaskConsumer(AsyncWebsocketConsumer):
                 self.user_group_name,
                 self.channel_name
             )
-            print(f"WS disconnected for user: {self.user.username}")
-            
-    # Получение сообщений от группы (например, при обновлении задачи)
+            logger.info("WS disconnected for user: %s", self.user.username)
     async def task_update(self, event):
         message = event['message']
-        
-        # Отправка сообщения клиенту
         await self.send(text_data=json.dumps({
             'type': 'task_update',
-            'data': message
+            'task': message
         }))

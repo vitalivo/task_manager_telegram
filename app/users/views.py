@@ -2,8 +2,12 @@
 
 from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.contrib.auth import login
+from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.conf import settings
 from .forms import CustomUserCreationForm
-from .models import UserProfile
+from .models import UserProfile, TelegramLoginToken
 
 def register(request):
     """Обрабатывает форму регистрации, используя кастомную форму."""
@@ -40,3 +44,27 @@ def register(request):
         form = CustomUserCreationForm()
         
     return render(request, 'users/register.html', {'form': form})
+
+
+def telegram_login(request, token):
+    """Быстрый вход в веб по одноразовой ссылке из Telegram."""
+    try:
+        login_token = TelegramLoginToken.objects.select_related('user').get(token=token)
+    except TelegramLoginToken.DoesNotExist:
+        messages.error(request, 'Ссылка входа недействительна или устарела.')
+        return render(request, 'users/tg_login_error.html', status=400)
+
+    if not login_token.is_valid():
+        messages.error(request, 'Ссылка входа недействительна или устарела.')
+        return render(request, 'users/tg_login_error.html', status=400)
+
+    login_token.used_at = timezone.now()
+    login_token.save(update_fields=['used_at'])
+
+    login(request, login_token.user)
+
+    next_url = request.GET.get('next')
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+
+    return redirect(settings.LOGIN_REDIRECT_URL or '/')

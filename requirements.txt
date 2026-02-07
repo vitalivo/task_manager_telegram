@@ -1,25 +1,18 @@
-# Django/DRF/Channels
 Django>=4.2
 djangorestframework>=3.14
 channels>=4.0
 daphne
-psycopg2-binary # PostgreSQL adapter
-
-# Async/Caching
+psycopg2-binary 
 celery>=5.3
 redis>=4.5
-
-# Telegram Bot
 aiogram>=3.0
-httpx # Для асинхронных запросов из бота к API Django
+httpx 
 python-dotenv
 django-celery-beat==2.8.1
-
 channels-redis==4.3.0
 django-crispy-forms==2.4
 whitenoise==6.11.0
-
 dj-database-url==3.0.1
 django-cors-headers==4.9.0
-
 django-widget-tweaks==1.5.0
+drf-spectacular==0.28.0

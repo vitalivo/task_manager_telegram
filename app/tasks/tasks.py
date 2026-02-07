@@ -7,7 +7,6 @@ import os
 from django.db.models import Q
 
 User = get_user_model()
-DJANGO_API_BASE_URL = os.environ.get('DJANGO_API_BASE_URL', 'http://app:8000')
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 
 
@@ -15,6 +14,8 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 def send_telegram_notification(user_id, message):
     """Отправка уведомления в Telegram через Bot API."""
     try:
+        if not TELEGRAM_BOT_TOKEN:
+            return "Telegram bot token is not configured."
         user = User.objects.get(id=user_id)
         chat_id = user.profile.telegram_chat_id
         
@@ -23,11 +24,10 @@ def send_telegram_notification(user_id, message):
             payload = {
                 'chat_id': chat_id,
                 'text': message,
-                'parse_mode': 'Markdown'
             }
             # Используем httpx для асинхронного запроса, хотя Celery синхронный worker
             # В данном контексте это просто HTTP-запрос
-            response = httpx.post(url, data=payload)
+            response = httpx.post(url, data=payload, timeout=5)
             response.raise_for_status()
             return f"Telegram notification sent to {user.username}"
         else:

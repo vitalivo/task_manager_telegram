@@ -21,13 +21,22 @@ from rest_framework.routers import DefaultRouter
 from tasks.views import TaskViewSet, TaskBotAPIView 
 from django.conf import settings # <--- ИМПОРТ
 from django.conf.urls.static import static # <--- ИМПОРТ
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from .views import healthcheck
 
 router = DefaultRouter()
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'bot/tasks', TaskBotAPIView, basename='bot-task')
 
+admin.site.site_header = 'Панель управления'
+admin.site.site_title = 'TaskFlow Админ'
+admin.site.index_title = 'Администрирование'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('health/', healthcheck, name='healthcheck'),
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/v1/', include(router.urls)),
     path('api-auth/', include('rest_framework.urls')), 
     path('accounts/', include('django.contrib.auth.urls')),

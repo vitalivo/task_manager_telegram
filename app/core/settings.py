@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 # Load environment variables from .env file for local development
 load_dotenv() 
+IN_DOCKER = os.path.exists('/.dockerenv') or os.path.exists('/.dockerinit')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -17,26 +18,22 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'default-insecure-key')
 # Важно: для локального тестирования в .env должен быть DEBUG=True
 DEBUG = os.environ.get('DEBUG', 'False') == 'True' 
 
-# --- HOST AND SECURITY CONFIGURATION (FIXED) ---
-# Your actual domain from Render logs
-DEPLOYMENT_HOST = 'task-manager-telegram.onrender.com'
-# RENDER provides this variable, essential for ALLOWED_HOSTS
+# --- HOST AND SECURITY CONFIGURATION ---
+# Render sets RENDER_EXTERNAL_HOSTNAME automatically for web services.
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+DEPLOYMENT_HOST = os.environ.get('DEPLOYMENT_HOST') or RENDER_EXTERNAL_HOSTNAME
 
 # Build ALLOWED_HOSTS list
-ALLOWED_HOSTS = ['localhost', 'app', '127.0.0.1',  '0.0.0.0', DEPLOYMENT_HOST]
+ALLOWED_HOSTS = ['localhost', 'app', '127.0.0.1', '0.0.0.0']
+if DEPLOYMENT_HOST:
+    ALLOWED_HOSTS.append(DEPLOYMENT_HOST)
+ALLOWED_HOSTS = list(set(ALLOWED_HOSTS))  # Remove duplicates
 
-if RENDER_EXTERNAL_HOSTNAME:
-    # Add the RENDER provided hostname
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-
-ALLOWED_HOSTS = list(set(ALLOWED_HOSTS)) # Remove duplicates
-
-# CSRF Trusted Origins - Essential for deployment
-CSRF_TRUSTED_ORIGINS = [f'https://{DEPLOYMENT_HOST}']
-if RENDER_EXTERNAL_HOSTNAME:
-    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
-# Add local trusted origins
+# CSRF Trusted Origins
+CSRF_TRUSTED_ORIGINS = []
+if DEPLOYMENT_HOST:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{DEPLOYMENT_HOST}')
+# Local trusted origins (dev)
 CSRF_TRUSTED_ORIGINS.extend([
     'http://localhost:8005',
     'http://127.0.0.1:8005',
@@ -58,8 +55,9 @@ INSTALLED_APPS = [
     'crispy_forms',
     'corsheaders',
     'widget_tweaks',
-    'users',
-    'tasks',
+    'drf_spectacular',
+    'users.apps.UsersConfig',
+    'tasks.apps.TasksConfig',
 ]
 
 MIDDLEWARE = [
@@ -104,8 +102,21 @@ DATABASES = {
 
 # --- REDIS/CHANNELS/CELERY CONFIGURATION (FIXED for Local/Render) ---
 
-# REDIS_URL from Render env variable (used in production/DEBUG=False)
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+# REDIS_URL from env; pick sensible defaults for local/dev
+REDIS_URL = os.environ.get('REDIS_URL')
+if not REDIS_URL:
+    if IN_DOCKER:
+        REDIS_URL = 'redis://redis:6379/0'
+    else:
+        REDIS_URL = 'redis://localhost:6379/0'
+
+# Cache
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+    }
+}
 
 if DEBUG:
     # Local development (Docker Compose) - use container name 'redis'
@@ -151,7 +162,25 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
-    ]
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '600/min',
+        'bot': '30/min',
+    },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'TaskFlow API',
+    'DESCRIPTION': 'API для управления задачами и интеграций',
+    'VERSION': '1.0.0',
 }
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -177,8 +206,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ru-ru'
 
-TIME_ZONE = 'UTC'
-
 USE_I18N = True
 
 USE_TZ = True
@@ -202,13 +229,48 @@ LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
+# --- Telegram Web Login (one-time links) ---
+# In production on Render you typically want WEB_BASE_URL=https://<your-service>.onrender.com
+WEB_BASE_URL = os.environ.get('WEB_BASE_URL')
+if not WEB_BASE_URL:
+    if DEPLOYMENT_HOST:
+        WEB_BASE_URL = f'https://{DEPLOYMENT_HOST}'
+    else:
+        WEB_BASE_URL = 'http://localhost:8005'
+TELEGRAM_LOGIN_TOKEN_TTL_SECONDS = int(os.environ.get('TELEGRAM_LOGIN_TOKEN_TTL_SECONDS', '300'))
+
 # This is often redundant if CSRF_TRUSTED_ORIGINS is set correctly, 
 # but useful for completeness if using local CORS requests.
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "http://localhost:8005",
+    "http://127.0.0.1:8005",
 ]
 
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap4" 
 CRISPY_TEMPLATE_PACK = "bootstrap4"
+
+# --- LOGGING ---
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
+}

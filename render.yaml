@@ -1,0 +1,46 @@
+# Render Blueprint
+# Цель: поднять Django (ASGI/daphne) + опциональные воркеры (celery + бот).
+# На бесплатном плане может потребоваться отключить worker-сервисы и заменить на cron/webhook.
+
+services:
+  - type: web
+    name: task-manager-web
+    env: docker
+    dockerfilePath: Dockerfile.app
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health/
+    startCommand: bash deploy/render/start_web.sh
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: core.settings
+      # ВАЖНО: задайте SECRET_KEY, DATABASE_URL, REDIS_URL, SYSTEM_BOT_TOKEN/TELEGRAM_BOT_TOKEN в Render Dashboard
+
+  # --- Опционально: Celery worker ---
+  - type: worker
+    name: task-manager-celery-worker
+    env: docker
+    dockerfilePath: Dockerfile.app
+    dockerContext: .
+    plan: free
+    startCommand: bash deploy/render/start_celery_worker.sh
+
+  # --- Опционально: Celery beat ---
+  - type: worker
+    name: task-manager-celery-beat
+    env: docker
+    dockerfilePath: Dockerfile.app
+    dockerContext: .
+    plan: free
+    startCommand: bash deploy/render/start_celery_beat.sh
+
+  # --- Опционально: Telegram bot (polling) ---
+  - type: worker
+    name: task-manager-telegram-bot
+    env: docker
+    dockerfilePath: Dockerfile.bot
+    dockerContext: .
+    plan: free
+    startCommand: python main.py
